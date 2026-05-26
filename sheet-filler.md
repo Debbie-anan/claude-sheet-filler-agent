@@ -23,9 +23,9 @@ memory: project
 |---|---|---|
 | A | 状态 | **不要写入此列**：人工核对标记列，用户手动填 "ok" 等值，agent 必须跳过 |
 | B | 产品 | 从截图中提取产品名称 |
-| C | wati | 留空（用户另行提供） |
+| C | wati | **不要写入此列**：用户手动填 WATI 数字（如 19194125792），agent 既不写入也不能用 null 清空。**写入 range 必须避开 C 列**（第14行已踩过坑——B14:L14 整段写入把 C14 WATI 清成了 null）|
 | D | 评论状态 | **固定**: "已上评" (dropdown) |
-| E | 礼品选择 | 留空 |
+| E | 礼品选择 | **不要写入此列**：用户手动填，agent 既不写入也不能用 null 清空。**写入 range 必须避开 E 列** |
 | F | 过程备注 | 留空 |
 | G | 邀评人 | **固定**: "赖丹" |
 | H | app email | 留空 |
@@ -33,7 +33,7 @@ memory: project
 | J | 留评站点 | 根据平台选择对应 dropdown 选项 |
 | K | 邀评渠道 | **固定**: "产品邀评EDM" (dropdown) |
 | L | 评论链接 | 从截图 URL 栏提取（用 url 对象格式写入） |
-| M | 评论截图 | **不要写入此列**：用户可能已手动上传截图，直接覆盖会丢失数据。写入时跳过 M 列 |
+| M | 评论截图 | **仅当用户本轮在聊天窗口发了截图才写入**：写入时用 embed-image 嵌入图片（先调用图片上传接口拿 fileToken，再写 `{"type":"embed-image","fileToken":"..."}`），无条件覆盖原值。**不能写成 type=url 的超链接**（表格会显示成可点击文件名而非缩略图）。如果用户**没**在窗口发截图，则跳过此列（保留原值，不写不清空） |
 | N | 星级 | 文本格式 "X.0"（如 "5.0"、"4.0"），注意是字符串不是数字。**判断方法见下方"星级判断规则"** |
 | O | Amazon profile name | 仅 Amazon 评论填写评论者名称；非 Amazon 留空 |
 | P | Amazon profile link | 仅 Amazon 评论填写 profile 链接；非 Amazon 留空 |
@@ -55,15 +55,23 @@ Amazon/店铺留评, Amazon产品页留评, 独立站留评, Amazon上传视频,
 
 ## 写入格式
 
-**重要**：分两段写入，跳过 A 列（状态，人工核对）和 M 列（评论截图，用户已上传）。
+**重要**：A 列（状态）、C 列（WATI）、E 列（礼品选择）、M 列（评论截图）由用户手动管理，写入时这四列**绝不能出现在 range 里**——用 null 占位会清空已有值（C 列已踩过坑：第14行 WATI 被清成 null；E 列礼品选择同理）。所以拆成多段写：
 
-第一段 B:L：
+第一段 B（产品）：
 ```bash
-lark-cli sheets +write --spreadsheet-token TMJms0RiMhJTK7t0I3lcT44tn6g --sheet-id d352f1 --range "B{row}:L{row}" --as bot --profile bot2 --values '[[
-  "产品名",
-  null,
-  {"type":"multipleValue","values":["已上评"]},
-  null,
+lark-cli sheets +write --spreadsheet-token TMJms0RiMhJTK7t0I3lcT44tn6g --sheet-id d352f1 --range "B{row}:B{row}" --as bot --profile bot2 --values '[["产品名"]]'
+```
+
+第二段 D（评论状态，**跳过 C 列 WATI**）：
+```bash
+lark-cli sheets +write --spreadsheet-token TMJms0RiMhJTK7t0I3lcT44tn6g --sheet-id d352f1 --range "D{row}:D{row}" --as bot --profile bot2 --values '[[
+  {"type":"multipleValue","values":["已上评"]}
+]]'
+```
+
+第三段 F:L（**跳过 E 列礼品选择**）：
+```bash
+lark-cli sheets +write --spreadsheet-token TMJms0RiMhJTK7t0I3lcT44tn6g --sheet-id d352f1 --range "F{row}:L{row}" --as bot --profile bot2 --values '[[
   null,
   "赖丹",
   null,
@@ -74,7 +82,13 @@ lark-cli sheets +write --spreadsheet-token TMJms0RiMhJTK7t0I3lcT44tn6g --sheet-i
 ]]'
 ```
 
-第二段 N:Q（跳过 M 列截图，保留用户上传的截图）：
+第四段 M（**仅当用户本轮发了新截图才执行**，否则跳过）：
+用图片上传接口（如 `lark-cli sheets +write-image`）写入 embed-image 类型，无条件覆盖原值。**不要写成 url 超链接**——历史踩过坑（M16 事件），表格只会显示文件名超链接，不显示缩略图。
+```bash
+lark-cli sheets +write-image --spreadsheet-token TMJms0RiMhJTK7t0I3lcT44tn6g --sheet-id d352f1 --range "M{row}:M{row}" --as bot --profile bot2 --image-path "<截图本地路径>"
+```
+
+第五段 N:Q（星级、Amazon profile、评论类型）：
 ```bash
 lark-cli sheets +write --spreadsheet-token TMJms0RiMhJTK7t0I3lcT44tn6g --sheet-id d352f1 --range "N{row}:Q{row}" --as bot --profile bot2 --values '[[
   "X.0",
